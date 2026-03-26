@@ -17,16 +17,17 @@
       - Compares them against currently present devices to identify phantoms.
       - Displays full device details: name, class, class GUID, enumerator,
         hardware ID, manufacturer, location, and instance ID.
-      - Supports live text filtering, multi-row selection (Shift / Ctrl),
-        and individual or bulk removal via SetupDiRemoveDevice.
+      - Supports live text filtering and multi-row selection (Shift / Ctrl),
+        with single or bulk removal of ghost devices via SetupDiRemoveDevice.
       - Optionally overlays currently active USB devices in the same list
         (highlighted in green) for side-by-side comparison.
+      - Exports the visible device list to a timestamped CSV file.
 
     Active (present) devices are shown read-only and cannot be removed.
 
 .NOTES
     Author  : Robert Andersson Jarl / GitHub Copilot
-    Version : 1.0
+    Version : 1.01
     Tested  : Windows 10, Windows 11
     Requires: Run as Administrator (enforced via #Requires)
 
@@ -280,23 +281,6 @@ function Apply-Filter {
     Update-StatusBar
 }
 
-function Remove-GhostRow([System.Windows.Forms.DataGridViewRow]$Row) {
-    $ghost       = $Row.Tag
-    $devInfoCopy = $ghost.DevInfo   # value copy — safe for P/Invoke pass-by-ref
-    $ok = [GhostApi]::SetupDiRemoveDevice($script:allDis, [ref]$devInfoCopy)
-    if ($ok) {
-        $script:dgv.Rows.Remove($Row)
-        Update-StatusBar
-        return $true
-    }
-    $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-    [System.Windows.Forms.MessageBox]::Show(
-        "Failed to remove:`n$($ghost.Name)`n`nWin32 error: $err",
-        'Remove Failed',
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-    return $false
-}
 #endregion
 
 #region ── Build Form ──────────────────────────────────────────────────────────
@@ -377,7 +361,7 @@ $script:dgv = New-Object System.Windows.Forms.DataGridView
 $script:dgv.Dock                          = 'Fill'
 $script:dgv.AllowUserToAddRows            = $false
 $script:dgv.AllowUserToDeleteRows         = $false
-$script:dgv.ReadOnly                      = $false
+$script:dgv.ReadOnly                      = $true
 $script:dgv.SelectionMode                 = 'FullRowSelect'
 $script:dgv.MultiSelect                   = $true
 $script:dgv.RowHeadersVisible             = $false
@@ -416,9 +400,6 @@ foreach ($c in $textCols) {
     $col.SortMode   = 'Automatic'
     $script:dgv.Columns.Add($col) | Out-Null
 }
-
-# Remove button column
-# (removed — use the toolbar buttons instead)
 
 # ─ Status strip ─
 $statusStrip                = New-Object System.Windows.Forms.StatusStrip
@@ -516,8 +497,6 @@ $btnRefresh.Add_Click({
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
     }
 })
-
-# Per-row Remove button handler removed (column no longer exists)
 
 # Remove Selected (ghosts only — active rows are silently skipped)
 $btnRemoveSel.Add_Click({
